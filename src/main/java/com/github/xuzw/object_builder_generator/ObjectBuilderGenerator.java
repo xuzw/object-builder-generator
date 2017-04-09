@@ -11,6 +11,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
@@ -67,6 +68,9 @@ public class ObjectBuilderGenerator {
         CompilationUnit source = JavaParser.parse(new File(sourceJavaFilePath), encoding);
         CompilationUnit target = new CompilationUnit();
         target.setPackageDeclaration(source.getPackageDeclaration().get());
+        for (ImportDeclaration importDeclaration : source.getImports()) {
+            target.addImport(importDeclaration);
+        }
         String sourceClassName = source.getTypes().get(0).getName().toString();
         String targetClassName = sourceClassName + "Builder";
         ClassOrInterfaceDeclaration classDeclaration = target.addClass(targetClassName);
