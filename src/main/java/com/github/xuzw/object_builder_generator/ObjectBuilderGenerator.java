@@ -1,9 +1,12 @@
 package com.github.xuzw.object_builder_generator;
 
 import java.io.File;
-import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.Charset;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import com.github.javaparser.JavaParser;
@@ -11,16 +14,21 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
+import com.github.javaparser.ast.expr.AssignExpr;
+import com.github.javaparser.ast.expr.AssignExpr.Operator;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.expr.SimpleName;
 import com.github.javaparser.ast.expr.ThisExpr;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.ReturnStmt;
+import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
 
 /**
@@ -30,7 +38,6 @@ import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
 public class ObjectBuilderGenerator {
     private Charset encoding;
     private String sourceJavaFilePath;
-    private String targetJavaFilePath;
 
     public Charset getEncoding() {
         return encoding;
@@ -48,21 +55,24 @@ public class ObjectBuilderGenerator {
         this.sourceJavaFilePath = sourceJavaFilePath;
     }
 
-    public String getTargetJavaFilePath() {
-        return targetJavaFilePath;
+    private String _getFieldSetter(String fieldName) {
+        return "set" + StringUtils.capitalize(fieldName);
     }
 
-    public void setTargetJavaFilePath(String targetJavaFilePath) {
-        this.targetJavaFilePath = targetJavaFilePath;
+    private String _getTargetJavaFilePath() {
+        return sourceJavaFilePath.replaceFirst(".java$", "") + "Builder.java";
     }
 
-    public void generate() throws FileNotFoundException {
+    public void generate() throws IOException {
         CompilationUnit source = JavaParser.parse(new File(sourceJavaFilePath), encoding);
         CompilationUnit target = new CompilationUnit();
+        target.setPackageDeclaration(source.getPackageDeclaration().get());
         String sourceClassName = source.getTypes().get(0).getName().toString();
         String targetClassName = sourceClassName + "Builder";
         ClassOrInterfaceDeclaration classDeclaration = target.addClass(targetClassName);
         classDeclaration.addPrivateField(sourceClassName, "obj");
+        ConstructorDeclaration constructorDeclaration = classDeclaration.addConstructor(Modifier.PUBLIC);
+        constructorDeclaration.setBody(new BlockStmt().addStatement(new AssignExpr(new NameExpr("obj"), new ObjectCreationExpr().setType(new ClassOrInterfaceType(sourceClassName)), Operator.ASSIGN)));
         source.accept(new VoidVisitorAdapter<Object>() {
             @Override
             public void visit(FieldDeclaration n, Object arg) {
@@ -73,15 +83,16 @@ public class ObjectBuilderGenerator {
                 BlockStmt blockStmt = new BlockStmt();
                 NodeList<Expression> list = new NodeList<>();
                 list.add(new NameExpr(fieldName));
-                blockStmt.addStatement(new MethodCallExpr(new NameExpr("obj"), new SimpleName(getFieldSetter(fieldName)), list));
+                blockStmt.addStatement(new MethodCallExpr(new NameExpr("obj"), new SimpleName(_getFieldSetter(fieldName)), list));
                 blockStmt.addStatement(new ReturnStmt(new ThisExpr()));
                 methodDeclaration.setBody(blockStmt);
             }
         }, null);
-        System.out.println(target.toString());
-    }
-
-    private String getFieldSetter(String fieldName) {
-        return "set" + StringUtils.capitalize(fieldName);
+        MethodDeclaration buildMethodDeclaration = classDeclaration.addMethod("build", Modifier.PUBLIC);
+        buildMethodDeclaration.setType(sourceClassName);
+        buildMethodDeclaration.setBody(new BlockStmt().addStatement(new ReturnStmt(new NameExpr("obj"))));
+        OutputStream output = new FileOutputStream(_getTargetJavaFilePath());
+        IOUtils.write(target.toString(), output, encoding);
+        IOUtils.closeQuietly(output);
     }
 }
